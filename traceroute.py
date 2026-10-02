@@ -16,6 +16,15 @@ TRACEROUTE_PORT_NUMBER = 33434
 # sondas que a funcao traceroute deve enviar para um mesmo TTL antes de seguir adiante.
 PROBE_ATTEMPT_COUNT = 3
 
+def buffer_to_bits(buffer: bytes):
+    return ''.join(format(byte, '08b') for byte in [*buffer])
+
+def bits_to_int(b: str, l: int, r: int):
+    return int(b[l:r], 2)
+
+def bits_to_ip(b: str, l: int, r: int):
+    partes = [str(int(b[i: i + 8], 2)) for i in range(l, r, 8)]
+    return '.'.join(partes)
 
 class IPv4:
     # Cada membro abaixo corresponde a um campo do cabecalho IPv4. Os campos aparecem
@@ -37,7 +46,19 @@ class IPv4:
     dst: str
 
     def __init__(self, buffer: bytes):
-        pass  # TODO: implemente a interpretacao do cabecalho IPv4.
+        b = buffer_to_bits(buffer)
+        self.version =      bits_to_int(b, 0, 4)
+        self.header_len =   bits_to_int(b, 4, 8)
+        self.tos =          bits_to_int(b, 8, 16)
+        self.length =       bits_to_int(b, 16, 32)
+        self.id =           bits_to_int(b, 32, 48)
+        self.flags =        bits_to_int(b, 48, 51)
+        self.frag_offset =  bits_to_int(b, 51, 64)
+        self.ttl =          bits_to_int(b, 64, 72)
+        self.proto =        bits_to_int(b, 72, 80)
+        self.cksum =        bits_to_int(b, 80, 96)
+        self.src =          bits_to_ip(b, 96, 128)
+        self.dst =          bits_to_ip(b, 128, 160)
 
     def __str__(self) -> str:
         return f"IPv{self.version} (tos 0x{self.tos:x}, ttl {self.ttl}, " + \
@@ -107,11 +128,15 @@ def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) \
     a lista correspondente pode ficar vazia. Se `ip` for descoberto, ele deve aparecer
     como o ultimo elemento da lista externa.
     """
-    sendsock.set_ttl(1)
+    
+    # testando
+    sendsock.set_ttl(30)
     sendsock.sendto("Potato".encode(), (ip, TRACEROUTE_PORT_NUMBER))
     if recvsock.recv_select():
         buffer, address = recvsock.recvfrom()
+        ip_ = IPv4(buffer)
         print(buffer.hex())
+        print(ip_.__str__())
 
     # TODO: adicione sua implementacao.
     # for ttl in range(1, TRACEROUTE_MAX_TTL + 1):
