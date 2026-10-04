@@ -131,9 +131,9 @@ def encerrar(ip_origem: str, ip_destino: str, icmp: ICMP) -> bool:
     return (ip_origem == ip_destino and resp_icmp(icmp) == "porta_inalcancavel")
  
  
-def add_roteador(roteadores_ttl: list[str], endereco: str):
-    if endereco not in roteadores_ttl:
-        roteadores_ttl.append(endereco)
+def add_roteador(roteadores: list[str], endereco: str):
+    if endereco not in roteadores:
+        roteadores.append(endereco)
 
 def verificar_resp(buffer: bytes):
     tam_icmp = 8
@@ -206,8 +206,7 @@ def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) \
                     continue
  
                 ip_alc, icmp, ip_og, udp_og = resposta
-                if ip_og.dst != ip \
-                        or udp_og.dst_port != TRACEROUTE_PORT_NUMBER:
+                if ip_og.dst != ip or udp_og.dst_port != TRACEROUTE_PORT_NUMBER:
                     continue
                 if resp_icmp(icmp) == "ignorar":
                     continue
