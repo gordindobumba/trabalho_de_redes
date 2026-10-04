@@ -115,6 +115,58 @@ class UDP:
 
 # TODO: sinta-se a vontade para adicionar funcoes auxiliares, se desejar.
 
+def calcular_inicio_cabecalho_transporte(buffer: bytes) -> int:
+    return (buffer[0] & 0x0F) * 4
+ 
+ 
+def classificar_resposta_icmp(icmp: ICMP) -> str:
+    if icmp.type == 11 and icmp.code == 0:
+        return "tempo_excedido"
+    if icmp.type == 3 and icmp.code == 3:
+        return "porta_inalcancavel"
+    return "ignorar"
+ 
+ 
+def deve_encerrar_traceroute(ip_origem: str, ip_destino: str, icmp: ICMP) -> bool:
+    return (ip_origem == ip_destino and classificar_resposta_icmp(icmp) == "porta_inalcancavel")
+ 
+ 
+def registrar_roteador_descoberto(roteadores_ttl: list[str], endereco: str):
+    if endereco not in roteadores_ttl:
+        roteadores_ttl.append(endereco)
+
+def interpretar_resposta_da_sonda(buffer: bytes):
+    TAMANHO_CABECALHO_ICMP = 8
+    TAMANHO_CABECALHO_UDP = 8
+    TAMANHO_MINIMO_IPV4 = 20
+ 
+    if len(buffer) < TAMANHO_MINIMO_IPV4:
+        return None
+ 
+    inicio_icmp = calcular_inicio_cabecalho_transporte(buffer)
+    if inicio_icmp < TAMANHO_MINIMO_IPV4:
+        return None
+    ip_externo = IPv4(buffer[:TAMANHO_MINIMO_IPV4])
+    if ip_externo.proto != util.IPPROTO_ICMP:
+        return None
+ 
+    resto = buffer[inicio_icmp:]
+    if len(resto) < TAMANHO_CABECALHO_ICMP + TAMANHO_MINIMO_IPV4:
+        return None
+    icmp = ICMP(resto[:TAMANHO_CABECALHO_ICMP])
+ 
+    pacote_original = resto[TAMANHO_CABECALHO_ICMP:]
+    inicio_udp = calcular_inicio_cabecalho_transporte(pacote_original)
+    if inicio_udp < TAMANHO_MINIMO_IPV4 \
+            or len(pacote_original) < inicio_udp + TAMANHO_CABECALHO_UDP:
+        return None
+    ip_original = IPv4(pacote_original[:TAMANHO_MINIMO_IPV4])
+    if ip_original.proto != util.IPPROTO_UDP:
+        return None
+    udp_original = UDP(pacote_original[inicio_udp:inicio_udp + TAMANHO_CABECALHO_UDP])
+ 
+    return ip_externo, icmp, ip_original, udp_original
+ 
 
 def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) \
         -> list[list[str]]:
@@ -132,21 +184,50 @@ def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) \
     Uma lista de listas representando os roteadores descobertos para cada TTL sondado.
     A lista de indice i contem todos os roteadores encontrados com uma sonda de TTL i+1.
     Os roteadores podem aparecer em qualquer ordem. Se nenhum roteador for encontrado,
-    a lista correspondente pode ficar vazia. Se `ip` for descoberto, ele deve aparecer
+    a lista correspondente pode ficar vazia. Se ip for descoberto, ele deve aparecer
     como o ultimo elemento da lista externa.
     """
     
-    # testando
-    sendsock.set_ttl(1)
-    sendsock.sendto("Potato".encode(), (ip, TRACEROUTE_PORT_NUMBER))
-    if recvsock.recv_select():
-        buffer, address = recvsock.recvfrom()
-        print(buffer.hex())
-
+    caminho = []
     # TODO: adicione sua implementacao.
-    # for ttl in range(1, TRACEROUTE_MAX_TTL + 1):
-    #     util.print_result([], ttl)
-    # return []
+    for ttl in range(1, TRACEROUTE_MAX_TTL + 1):
+        roteadores_ttl = []
+        destino_alcancado = False
+        sendsock.set_ttl(ttl)
+ 
+        for _ in range(PROBE_ATTEMPT_COUNT):
+            sendsock.sendto("Potato".encode(), (ip, TRACEROUTE_PORT_NUMBER))
+ 
+            while recvsock.recv_select():
+                buffer, _ = recvsock.recvfrom()
+                resposta = interpretar_resposta_da_sonda(buffer)
+                if resposta is None:
+                    continue
+ 
+                ip_externo, icmp, ip_original, udp_original = resposta
+                if ip_original.dst != ip \
+                        or udp_original.dst_port != TRACEROUTE_PORT_NUMBER:
+                    continue
+                if classificar_resposta_icmp(icmp) == "ignorar":
+                    continue
+ 
+                if deve_encerrar_traceroute(ip_externo.src, ip, icmp):
+                    destino_alcancado = True
+                else:
+                    registrar_roteador_descoberto(roteadores_ttl, ip_externo.src)
+                break
+ 
+            if destino_alcancado: break
+ 
+        if destino_alcancado:
+            roteadores_ttl = []
+            registrar_roteador_descoberto(roteadores_ttl, ip)
+ 
+        util.print_result(roteadores_ttl, ttl)
+        caminho.append(roteadores_ttl)
+ 
+        if destino_alcancado: break
+    return caminho
 
 
 if __name__ == '__main__':
