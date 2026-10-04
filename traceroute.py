@@ -48,7 +48,7 @@ class IPv4:
     def __init__(self, buffer: bytes):
         b = buffer_to_bits(buffer)
         self.version =      bits_to_int(b, 0, 4)
-        self.header_len =   bits_to_int(b, 4, 8)
+        self.header_len =   bits_to_int(b, 4, 8) * 4
         self.tos =          bits_to_int(b, 8, 16)
         self.length =       bits_to_int(b, 16, 32)
         self.id =           bits_to_int(b, 32, 48)
@@ -80,7 +80,10 @@ class ICMP:
     cksum: int
 
     def __init__(self, buffer: bytes):
-        pass  # TODO: implemente a interpretacao do cabecalho ICMP.
+        b = buffer_to_bits(buffer)
+        self.type = bits_to_int(b, 0, 8)
+        self.code = bits_to_int(b, 8, 16)
+        self.cksum = bits_to_int(b, 16, 32)
 
     def __str__(self) -> str:
         return f"ICMP (type {self.type}, code {self.code}, " + \
@@ -99,7 +102,11 @@ class UDP:
     cksum: int
 
     def __init__(self, buffer: bytes):
-        pass  # TODO: implemente a interpretacao do cabecalho UDP.
+        b = buffer_to_bits(buffer)
+        self.src_port = bits_to_int(b, 0, 16)
+        self.dst_port = bits_to_int(b, 16, 32)
+        self.len = bits_to_int(b, 32, 48)
+        self.cksum = bits_to_int(b, 48, 64)
 
     def __str__(self) -> str:
         return f"UDP (src_port {self.src_port}, dst_port {self.dst_port}, " + \
@@ -130,13 +137,11 @@ def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) \
     """
     
     # testando
-    sendsock.set_ttl(30)
+    sendsock.set_ttl(1)
     sendsock.sendto("Potato".encode(), (ip, TRACEROUTE_PORT_NUMBER))
     if recvsock.recv_select():
         buffer, address = recvsock.recvfrom()
-        ip_ = IPv4(buffer)
         print(buffer.hex())
-        print(ip_.__str__())
 
     # TODO: adicione sua implementacao.
     # for ttl in range(1, TRACEROUTE_MAX_TTL + 1):
