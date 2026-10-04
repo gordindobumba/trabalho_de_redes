@@ -143,11 +143,11 @@ def verificar_resp(buffer: bytes):
     if len(buffer) < tam_ipv4:
         return None
  
-    inicio_icmp = inicio_cab(buffer)
+    inicio_icmp = (buffer[0] & 0x0F) * 4
     if inicio_icmp < tam_ipv4:
         return None
-    ip_ext = IPv4(buffer[:tam_ipv4])
-    if ip_ext.proto != util.IPPROTO_ICMP:
+    ip_alc = IPv4(buffer[:tam_ipv4])
+    if ip_alc.proto != util.IPPROTO_ICMP:
         return None
  
     resto = buffer[inicio_icmp:]
@@ -160,12 +160,13 @@ def verificar_resp(buffer: bytes):
     if inicio_udp < tam_ipv4 \
             or len(pacote_og) < inicio_udp + tam_udp:
         return None
+    
     ip_og = IPv4(pacote_og[:tam_ipv4])
     if ip_og.proto != util.IPPROTO_UDP:
         return None
     udp_og = UDP(pacote_og[inicio_udp:inicio_udp + tam_udp])
  
-    return ip_ext, icmp, ip_og, udp_og
+    return ip_alc, icmp, ip_og, udp_og
  
 
 def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) \
@@ -204,17 +205,17 @@ def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) \
                 if resposta is None:
                     continue
  
-                ip_ext, icmp, ip_og, udp_og = resposta
+                ip_alc, icmp, ip_og, udp_og = resposta
                 if ip_og.dst != ip \
                         or udp_og.dst_port != TRACEROUTE_PORT_NUMBER:
                     continue
                 if resp_icmp(icmp) == "ignorar":
                     continue
  
-                if encerrar(ip_ext.src, ip, icmp):
+                if encerrar(ip_alc.src, ip, icmp):
                     alcancado = True
                 else:
-                    add_roteador(roteadores, ip_ext.src)
+                    add_roteador(roteadores, ip_alc.src)
                 break
  
             if alcancado: break
