@@ -115,11 +115,11 @@ class UDP:
 
 # TODO: sinta-se a vontade para adicionar funcoes auxiliares, se desejar.
 
-def calcular_inicio_cabecalho_transporte(buffer: bytes) -> int:
+def inicio_cab(buffer: bytes) -> int:
     return (buffer[0] & 0x0F) * 4
  
  
-def classificar_resposta_icmp(icmp: ICMP) -> str:
+def resp_icmp(icmp: ICMP) -> str:
     if icmp.type == 11 and icmp.code == 0:
         return "tempo_excedido"
     if icmp.type == 3 and icmp.code == 3:
@@ -127,45 +127,45 @@ def classificar_resposta_icmp(icmp: ICMP) -> str:
     return "ignorar"
  
  
-def deve_encerrar_traceroute(ip_origem: str, ip_destino: str, icmp: ICMP) -> bool:
-    return (ip_origem == ip_destino and classificar_resposta_icmp(icmp) == "porta_inalcancavel")
+def encerrar(ip_origem: str, ip_destino: str, icmp: ICMP) -> bool:
+    return (ip_origem == ip_destino and resp_icmp(icmp) == "porta_inalcancavel")
  
  
-def registrar_roteador_descoberto(roteadores_ttl: list[str], endereco: str):
+def add_roteador(roteadores_ttl: list[str], endereco: str):
     if endereco not in roteadores_ttl:
         roteadores_ttl.append(endereco)
 
-def interpretar_resposta_da_sonda(buffer: bytes):
-    TAMANHO_CABECALHO_ICMP = 8
-    TAMANHO_CABECALHO_UDP = 8
-    TAMANHO_MINIMO_IPV4 = 20
+def verificar_resp(buffer: bytes):
+    tam_icmp = 8
+    tam_udp = 8
+    tam_ipv4 = 20
  
-    if len(buffer) < TAMANHO_MINIMO_IPV4:
+    if len(buffer) < tam_ipv4:
         return None
  
-    inicio_icmp = calcular_inicio_cabecalho_transporte(buffer)
-    if inicio_icmp < TAMANHO_MINIMO_IPV4:
+    inicio_icmp = inicio_cab(buffer)
+    if inicio_icmp < tam_ipv4:
         return None
-    ip_externo = IPv4(buffer[:TAMANHO_MINIMO_IPV4])
-    if ip_externo.proto != util.IPPROTO_ICMP:
+    ip_ext = IPv4(buffer[:tam_ipv4])
+    if ip_ext.proto != util.IPPROTO_ICMP:
         return None
  
     resto = buffer[inicio_icmp:]
-    if len(resto) < TAMANHO_CABECALHO_ICMP + TAMANHO_MINIMO_IPV4:
+    if len(resto) < tam_icmp + tam_ipv4:
         return None
-    icmp = ICMP(resto[:TAMANHO_CABECALHO_ICMP])
+    icmp = ICMP(resto[:tam_icmp])
  
-    pacote_original = resto[TAMANHO_CABECALHO_ICMP:]
-    inicio_udp = calcular_inicio_cabecalho_transporte(pacote_original)
-    if inicio_udp < TAMANHO_MINIMO_IPV4 \
-            or len(pacote_original) < inicio_udp + TAMANHO_CABECALHO_UDP:
+    pacote_og = resto[tam_icmp:]
+    inicio_udp = inicio_cab(pacote_og)
+    if inicio_udp < tam_ipv4 \
+            or len(pacote_og) < inicio_udp + tam_udp:
         return None
-    ip_original = IPv4(pacote_original[:TAMANHO_MINIMO_IPV4])
-    if ip_original.proto != util.IPPROTO_UDP:
+    ip_og = IPv4(pacote_og[:tam_ipv4])
+    if ip_og.proto != util.IPPROTO_UDP:
         return None
-    udp_original = UDP(pacote_original[inicio_udp:inicio_udp + TAMANHO_CABECALHO_UDP])
+    udp_og = UDP(pacote_og[inicio_udp:inicio_udp + tam_udp])
  
-    return ip_externo, icmp, ip_original, udp_original
+    return ip_ext, icmp, ip_og, udp_og
  
 
 def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) \
@@ -191,8 +191,8 @@ def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) \
     caminho = []
     # TODO: adicione sua implementacao.
     for ttl in range(1, TRACEROUTE_MAX_TTL + 1):
-        roteadores_ttl = []
-        destino_alcancado = False
+        roteadores = []
+        alcancado = False
         sendsock.set_ttl(ttl)
  
         for _ in range(PROBE_ATTEMPT_COUNT):
@@ -200,33 +200,33 @@ def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) \
  
             while recvsock.recv_select():
                 buffer, _ = recvsock.recvfrom()
-                resposta = interpretar_resposta_da_sonda(buffer)
+                resposta = verificar_resp(buffer)
                 if resposta is None:
                     continue
  
-                ip_externo, icmp, ip_original, udp_original = resposta
-                if ip_original.dst != ip \
-                        or udp_original.dst_port != TRACEROUTE_PORT_NUMBER:
+                ip_ext, icmp, ip_og, udp_og = resposta
+                if ip_og.dst != ip \
+                        or udp_og.dst_port != TRACEROUTE_PORT_NUMBER:
                     continue
-                if classificar_resposta_icmp(icmp) == "ignorar":
+                if resp_icmp(icmp) == "ignorar":
                     continue
  
-                if deve_encerrar_traceroute(ip_externo.src, ip, icmp):
-                    destino_alcancado = True
+                if encerrar(ip_ext.src, ip, icmp):
+                    alcancado = True
                 else:
-                    registrar_roteador_descoberto(roteadores_ttl, ip_externo.src)
+                    add_roteador(roteadores, ip_ext.src)
                 break
  
-            if destino_alcancado: break
+            if alcancado: break
  
-        if destino_alcancado:
-            roteadores_ttl = []
-            registrar_roteador_descoberto(roteadores_ttl, ip)
+        if alcancado:
+            roteadores = []
+            add_roteador(roteadores, ip)
  
-        util.print_result(roteadores_ttl, ttl)
-        caminho.append(roteadores_ttl)
+        util.print_result(roteadores, ttl)
+        caminho.append(roteadores)
  
-        if destino_alcancado: break
+        if alcancado: break
     return caminho
 
 
